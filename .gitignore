@@ -1,2 +1,10 @@
+akka-csv-supper-duper/target/**/*
+akka-csv-supper-duper/.idea/**/*
+akka-csv-supper-duper/project/**/*
+akka-csv-supper-duper/src/main/main.iml
+akka-csv-supper-duper/src/test/test.iml
+akka-csv-supper-duper/target/**/*
+target/*
+
 *.class
 *.log
