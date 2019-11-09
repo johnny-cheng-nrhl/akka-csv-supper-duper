@@ -23,7 +23,8 @@ object CsvConsumer extends App {
   // implicit actor materializer
   implicit val materializer = ActorMaterializer()
   
-  val path = Paths.get("src/main/resources/backfill_events.csv")
+  //  val path = Paths.get("src/main/resources/backfill_events.csv")
+  val path = Paths.get("src/main/resources/backfill_events4.csv")
   println(path)
 
   private def parseOptionalStr(str: String): Option[String] =
@@ -50,21 +51,38 @@ object CsvConsumer extends App {
     CsvParsing.lineScanner()
   val flow2: Flow[List[ByteString], List[String], NotUsed] = 
     Flow[List[ByteString]].map(list => list.map(_.utf8String))
-  val flow3: Flow[List[String], SalesEvent, NotUsed] =
+
+//  val flow3: Flow[List[String], SalesEvent, NotUsed] =
+//    Flow[List[String]].map(
+//      l =>
+//        SalesEvent(l(0).toLong,
+//                  DateTime.parse(l(1), defaultDateTimeFormatter),
+//                  DateTime.parse(l(2), defaultDateTimeFormatter),
+//                  parseOptionalStr(l(3)).map(_.toLong),
+//                  DateTime.parse(l(4), poEventDateTimeFormatter),
+//                  DateTime.parse(l(5), poEventDateTimeFormatter))
+//    )
+  val flow3_1: Flow[List[String], EventInfo, NotUsed] =
     Flow[List[String]].map(
       l =>
-        SalesEvent(l(0).toLong,
-                  DateTime.parse(l(1), defaultDateTimeFormatter),
-                  DateTime.parse(l(2), defaultDateTimeFormatter),
-                  parseOptionalStr(l(3)).map(_.toLong),
-                  DateTime.parse(l(4), poEventDateTimeFormatter),
-                  DateTime.parse(l(5), poEventDateTimeFormatter))
+        EventInfo(parseOptionalStr(l(0)).map(_.toLong),
+          DateTime.parse(l(1), poEventDateTimeFormatter),
+          DateTime.parse(l(2), poEventDateTimeFormatter)
+        )
     )
-  val flow4: Flow[SalesEvent, SalesEvent, NotUsed] =
-    Flow[SalesEvent].filter(s => s.eventId.isDefined)
-  val flow5: Flow[SalesEvent, String, NotUsed] =
-    Flow[SalesEvent].map(s => makeUpddateString(s.eventStartDate,
-      s.eventEndDate, s.eventId.get))
+//  val flow4: Flow[SalesEvent, SalesEvent, NotUsed] =
+//    Flow[SalesEvent].filter(s => s.eventId.isDefined)
+
+  val flow4_1: Flow[EventInfo, EventInfo, NotUsed] =
+    Flow[EventInfo].filter(e => e.eventId.isDefined)
+
+//  val flow5: Flow[SalesEvent, String, NotUsed] =
+//    Flow[SalesEvent].map(s => makeUpddateString(s.eventStartDate,
+//      s.eventEndDate, s.eventId.get))
+
+  val flow5_1: Flow[EventInfo, String, NotUsed] =
+    Flow[EventInfo].map(e => makeUpddateString(e.eventStartDate,
+      e.eventEndDate, e.eventId.get))
 
   // val flow3 = Flow[List[String]].map(list => CountryCapital(list(0), list(1)))
 
@@ -72,9 +90,9 @@ object CsvConsumer extends App {
     .via(flow1)
     .via(flow2)
     .drop(1)
-    .via(flow3)
-    .via(flow4)
-    .via(flow5)
+    .via(flow3_1)
+    .via(flow4_1)
+    .via(flow5_1)
     .runForeach(println)
   
   private val reply = Await.result(future, 10 seconds)
@@ -107,3 +125,5 @@ object CsvConsumer extends App {
 
 case class SalesEvent(poId: Long, startShipDate: DateTime, endShipDate: DateTime,
                       eventId: Option[Long], eventStartDate: DateTime, eventEndDate: DateTime)
+
+case class EventInfo(eventId: Option[Long], eventStartDate: DateTime, eventEndDate: DateTime)

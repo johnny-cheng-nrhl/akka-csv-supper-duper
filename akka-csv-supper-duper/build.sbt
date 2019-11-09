@@ -12,14 +12,18 @@ lazy val root = (project in file(".")).settings(
   ),
   name := "akka-quickstart-scala",
   libraryDependencies ++= Seq(
-    "com.typesafe.akka" %% "akka-actor" % akkaVersion,
-    "com.typesafe.akka" %% "akka-testkit" % akkaVersion,
-    "com.lightbend.akka" %% "akka-stream-alpakka-elasticsearch" % alpakkaVersion,
-    "com.lightbend.akka" %% "akka-stream-alpakka-csv" % alpakkaVersion,
-    "com.lightbend.akka" %% "akka-stream-alpakka-file" % alpakkaVersion,
-    // Nscala Time
-    "com.github.nscala-time" %% "nscala-time" % nscalaVersion,
-    "org.scalatest" %% "scalatest" % "3.0.5" % "test"
+    Dependencies.akkaActor,
+    Dependencies.akkaTestKit,
+    Dependencies.alpakkaCsv,
+    Dependencies.alpakkaFile,
+    Dependencies.nScalaTime,
+    Dependencies.alpakkaJson,
+    Dependencies.knutWalkerAkkaStream,
+    Dependencies.knutWalkerAkkaHttp,
+    Dependencies.circeCore,
+    Dependencies.circeGeneric,
+    Dependencies.circeParser,
+    Dependencies.scalaTest
   ),
   scalacOptions ++= Seq(
     "-language:higherKinds", // Allow higher-kinded types
@@ -28,4 +32,4 @@ lazy val root = (project in file(".")).settings(
 )
 
 // set the main class for the main 'sbt run' task
-mainClass in (Compile, run) := Some("net.propoint.fun.CsvConsumer")
+mainClass in (Compile, run) := Some("net.propoint.fun.JsonConsumer")
