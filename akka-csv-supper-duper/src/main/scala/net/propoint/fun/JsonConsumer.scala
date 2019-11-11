@@ -1,7 +1,6 @@
 package net.propoint.fun
 
 import java.nio.file.Paths
-import java.util.UUID
 
 import akka.{Done, NotUsed}
 import akka.actor.ActorSystem
@@ -19,8 +18,6 @@ import scala.concurrent.{Await, Future}
 import scala.concurrent.ExecutionContext.Implicits.global
 
 object JsonConsumer extends App {
-  import io.circe._
-  import io.circe.generic.auto._
   
   // implicit actor system
   implicit val system = ActorSystem("Sys")
@@ -33,24 +30,6 @@ object JsonConsumer extends App {
 
   private val jsonFileSource = FileIO.fromPath(path)
   type PurchaseOrderFlowElement = Either[circe.Error, PurchaseOrder]
-  
-  val input =
-    """
-      |[
-      | { "name" : "john" },
-      | { "name" : "Ég get etið gler án þess að meiða mig" },
-      | { "name" : "jack" },
-      |]
-      |""".stripMargin // also should complete once notices end of array
-
-//  val results =
-//    jsonFileSource
-//      .via(JsonFraming.objectScanner(Int.MaxValue))
-//      .runFold(Seq.empty[String]) 
-//      {
-//        case (acc, entry) => acc ++ Seq(entry.utf8String)
-//      }
-  
   
   def dedupedPurchaseOrder(purchaseOrderFlowElement: PurchaseOrderFlowElement): PurchaseOrderFlowElement = {
     def consolidateDuplicateSkusQuantities(
@@ -71,13 +50,6 @@ object JsonConsumer extends App {
       purchaseOrder <- purchaseOrderFlowElement
     } yield purchaseOrder.copy(items = consolidateDuplicateSkusQuantities(purchaseOrder.items))
   }
-  
-//  def makeUpddateString(purchaseOrderFlowElement: PurchaseOrderFlowElement)
-  
-//  def selectPurchaseOrderFlow(parallelism: Int): [ByteString, ByteString, _] =
-//      Flow[ByteString].mapAsync(parallelism) { cm =>
-//        Future(selectPurchaseOrder)
-//      }
   
   val selectPurchaseOrderFlow: Flow[ByteString, ByteString, NotUsed] =
     JsonReader.select("$.purchaseOrder")

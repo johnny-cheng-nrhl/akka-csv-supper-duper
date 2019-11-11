@@ -34,14 +34,12 @@ object PurchaseOrderDefinition {
                           )
 
   object PurchaseOrder {
-//    implicit val encodePersonPayload: Encoder[Person] = deriveEncoder[Person]
     implicit val encodeIdentifiersPayload: Encoder[Item] = deriveEncoder[Item]
     implicit val encodePurchaseOrderPayload: Encoder[PurchaseOrder] = deriveEncoder[PurchaseOrder]
     implicit val dateTimeEncoder: Encoder[DateTime] = Encoder[String].contramap(d => d.toString)
 
     val dateTimeFormatter: DateTimeFormatter = DateTimeFormat.forPattern("MM/dd/yyyy HH:mm:ss Z").withZone(DateTimeZone.forID("America/Los_Angeles"))
     implicit val dateTimeDecoder: Decoder[DateTime] = Decoder.decodeString.emap(str => Either.catchNonFatal(DateTime.parse(str, dateTimeFormatter)).leftMap(_.getMessage))
-//    implicit val decodePersonPayload: Decoder[Person] = deriveDecoder[Person]
     implicit val decodeIdentifiersPayload: Decoder[Item] = deriveDecoder[Item]
     implicit val decodePurchaseOrderPayload: Decoder[PurchaseOrder] = deriveDecoder[PurchaseOrder]
   }
