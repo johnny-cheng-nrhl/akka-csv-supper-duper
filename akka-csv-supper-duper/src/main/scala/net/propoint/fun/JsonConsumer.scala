@@ -11,9 +11,8 @@ import akka.stream.{ActorMaterializer, Graph, IOResult, SinkShape, Supervision}
 import akka.stream.scaladsl.{FileIO, Flow, JsonFraming, Keep, Sink, Source}
 import akka.util.ByteString
 import io.circe
-import net.propoint.fun.definition.PurchaseOrderDefinition.Person
+import net.propoint.fun.definition.PurchaseOrderDefinition.{Item, Person, PurchaseOrder}
 import net.propoint.fun.parser.PurchaseOrderParser
-
 
 import scala.concurrent.duration._
 import scala.concurrent.{Await, Future}
@@ -29,11 +28,11 @@ object JsonConsumer extends App {
   // implicit actor materializer
   implicit val materializer = ActorMaterializer()
 
-  val path = Paths.get("src/main/resources/po_backfill_1.json")
+  val path = Paths.get("src/main/resources/po_backfill_4.json")
   println(path)
 
   private val jsonFileSource = FileIO.fromPath(path)
-  type PurchaseOrderFlowElement = Either[circe.Error, Person]
+  type PurchaseOrderFlowElement = Either[circe.Error, PurchaseOrder]
   
   val input =
     """
@@ -51,21 +50,55 @@ object JsonConsumer extends App {
 //      {
 //        case (acc, entry) => acc ++ Seq(entry.utf8String)
 //      }
+  
+  
+  def dedupedPurchaseOrder(purchaseOrderFlowElement: PurchaseOrderFlowElement): PurchaseOrderFlowElement = {
+    def consolidateDuplicateSkusQuantities(
+                                            orderItems: List[Item]
+                                          ): List[Item] = {
+      val quantitiesByEpmSku: Map[Long, Long] = orderItems.groupBy(_.epmSku).mapValues(_.map(_.quantityOrdered).sum)
 
-  val flow1: Flow[ByteString, ByteString, NotUsed] =
-    JsonReader.select("$.rows[*].doc")
+      val dedupedIterable = for {
+        (_, items) <- orderItems.groupBy(_.epmSku)
+        item <- items.headOption
+        summedQuantity <- quantitiesByEpmSku.get(item.epmSku)
+      } yield item.copy(quantityOrdered = summedQuantity.toInt)
 
-  val flow2: Flow[ByteString, String, NotUsed] =
+      dedupedIterable.toList
+    }
+    
+    for {
+      purchaseOrder <- purchaseOrderFlowElement
+    } yield purchaseOrder.copy(items = consolidateDuplicateSkusQuantities(purchaseOrder.items))
+  }
+  
+//  def makeUpddateString(purchaseOrderFlowElement: PurchaseOrderFlowElement)
+  
+//  def selectPurchaseOrderFlow(parallelism: Int): [ByteString, ByteString, _] =
+//      Flow[ByteString].mapAsync(parallelism) { cm =>
+//        Future(selectPurchaseOrder)
+//      }
+  
+  val selectPurchaseOrderFlow: Flow[ByteString, ByteString, NotUsed] =
+    JsonReader.select("$.purchaseOrder")
+
+  val convertByteToStringFlow: Flow[ByteString, String, NotUsed] =
     Flow[ByteString].map(_.utf8String)
 
-  val flow3: Flow[String, PurchaseOrderFlowElement , NotUsed] =
-    Flow[String].map(PurchaseOrderParser.decodePurchaseOrder(_))
+  val parseStringToPurchaseOrderFlow: Flow[String, PurchaseOrderFlowElement , NotUsed] =
+    Flow[String].map { s =>
+      PurchaseOrderParser.decodePurchaseOrder(s)
+    }
+  
+  val dedupedPurchaseOrderFlow: Flow[PurchaseOrderFlowElement, PurchaseOrderFlowElement, NotUsed] =
+    Flow[PurchaseOrderFlowElement].map(dedupedPurchaseOrder(_))
 
   val results =
     jsonFileSource
-      .via(flow1)
-      .via(flow2)
-      .via(flow3)
+      .via(selectPurchaseOrderFlow)
+      .via(convertByteToStringFlow)
+      .via(parseStringToPurchaseOrderFlow)
+      .via(dedupedPurchaseOrderFlow)
       .toMat(Sink.fold(Seq.empty[String]) {
         case (acc, entry) => acc ++ Seq(entry.toString())
       })(Keep.right)
