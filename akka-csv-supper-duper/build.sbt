@@ -18,11 +18,19 @@ lazy val root = (project in file(".")).settings(
     Dependencies.alpakkaFile,
     Dependencies.nScalaTime,
     Dependencies.alpakkaJson,
-    Dependencies.knutWalkerAkkaStream,
-    Dependencies.knutWalkerAkkaHttp,
     Dependencies.circeCore,
     Dependencies.circeGeneric,
     Dependencies.circeParser,
+    Dependencies.scalaLogging,
+    Dependencies.logbackCore,
+    Dependencies.logbackClassic,
+    Dependencies.mysqlConnector,
+    Dependencies.doobieCore,
+    Dependencies.doobieHikari,
+    Dependencies.doobieH2,
+    Dependencies.doobieScalaTest,
+    Dependencies.doobieSpec2,
+    Dependencies.parSequence,
     Dependencies.scalaTest
   ),
   scalacOptions ++= Seq(
@@ -30,6 +38,3 @@ lazy val root = (project in file(".")).settings(
     "-Ypartial-unification"
   )
 )
-
-// set the main class for the main 'sbt run' task
-mainClass in (Compile, run) := Some("net.propoint.fun.JsonConsumer")

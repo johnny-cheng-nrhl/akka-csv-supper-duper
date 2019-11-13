@@ -1,20 +1,18 @@
-package net.propoint.fun
+package net.propoint.fun.consumers
 
 import java.nio.file.Paths
 
-import akka.{Done, NotUsed}
 import akka.actor.ActorSystem
-import akka.stream.{ActorMaterializer, ClosedShape}
-import akka.stream.alpakka.csv.scaladsl.{CsvParsing, CsvToMap}
-import akka.stream.scaladsl.{FileIO, Flow, GraphDSL, RunnableGraph, Sink}
+import akka.stream.ActorMaterializer
+import akka.stream.alpakka.csv.scaladsl.CsvParsing
+import akka.stream.scaladsl.{FileIO, Flow}
 import akka.util.ByteString
+import akka.{Done, NotUsed}
 import org.joda.time.DateTime
 import org.joda.time.format.{DateTimeFormat, DateTimeFormatter}
 
 import scala.concurrent.duration._
 import scala.concurrent.{Await, Future}
-import scala.concurrent.ExecutionContext.Implicits.global
-import scala.concurrent.duration.Duration
 
 object CsvConsumer extends App {
   // implicit actor system

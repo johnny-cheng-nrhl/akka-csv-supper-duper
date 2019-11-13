@@ -5,6 +5,7 @@ akka-csv-supper-duper/src/main/main.iml
 akka-csv-supper-duper/src/test/test.iml
 akka-csv-supper-duper/target/**/*
 target/*
+**/target/*
 
 *.class
 *.log
