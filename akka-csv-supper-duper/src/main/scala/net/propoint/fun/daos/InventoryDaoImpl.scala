@@ -16,12 +16,22 @@ class InventoryDaoImpl[F[_]: Monad: Par](ecommWriteConn: DoobieConnections.Write
   import InventoryUpdateSql._
   
   override def update(inventoryChanges: List[InventoryChange]): F[Int] = {
-    logger.info(s"Updating Inventory: ${inventoryChanges.size}")
+    logger.info(s"Updating Inventory rows size: ${inventoryChanges.size}")
     DoobieHelpers.batchUpdate(ecommWriteConn.xa, inventoryChanges, insertInventorySql).map(_.sum)
+  }
+
+  override def findInventoryByEventId(eventId: Long): F[List[InventoryChange]] = {
+    logger.info(s"Retrieving Inventory with EventID: ${eventId}")
+    getInventoryByEventId(eventId).to[List].transact(ecommWriteConn.xa)
   }
 }
 
 private object InventoryUpdateSql {
+  
+  def getInventoryByEventId(eventId: Long): Query0[InventoryChange] =
+    sql"""SELECT sku AS sku, event_id AS eventId, available AS available
+          FROM inventory WHERE event_id = $eventId""".query[InventoryChange]
+  
   def updateAvaiable(change: InventoryChange): Update0 = {
     fr"""UPDATE FROM inventory i 
           SET i.available = ${change.available} WHERE i.event_id = ${change.eventId}

@@ -1,0 +1,97 @@
+[
+  {
+    "correlationId": "e640aba7-0480-4cb3-b790-1d285b4fd733",
+    "departmentId": "161",
+    "endShipDate": "10/16/2019 00:00:00 +00:00",
+    "eventSource": "jwn",
+    "items": [
+      {
+        "deliveryDateTime": "06/11/2019 00:00:00 +00:00",
+        "description": "",
+        "destinationAddress": {
+          "city": "",
+          "country": "",
+          "line1": "",
+          "line2": "",
+          "line3": "",
+          "postalCode": "",
+          "state": ""
+        },
+        "destinationId": "873",
+        "destinationName": "VERNON",
+        "epmSku": "2046800534",
+        "lineNo": 1,
+        "promisedDateTime": "10/09/2019 00:00:00 +00:00",
+        "promisedShippedDateTime": "10/09/2019 00:00:00 +00:00",
+        "quantityCancelled": 0,
+        "quantityOrdered": 120,
+        "sku": "17741071",
+        "styleColorId": "BLUE COMBO COLOR FADE PRINT",
+        "styleId": "NR425658MI",
+        "styleSizeId": "NONE",
+        "unitCost": 4.85,
+        "unitMeasure": "EACH",
+        "vendorUpc": ""
+      },
+      {
+        "deliveryDateTime": "06/11/2019 00:00:00 +00:00",
+        "description": "",
+        "destinationAddress": {
+          "city": "",
+          "country": "",
+          "line1": "",
+          "line2": "",
+          "line3": "",
+          "postalCode": "",
+          "state": ""
+        },
+        "destinationId": "873",
+        "destinationName": "VERNON",
+        "epmSku": "2046800535",
+        "lineNo": 2,
+        "promisedDateTime": "10/09/2019 00:00:00 +00:00",
+        "promisedShippedDateTime": "10/09/2019 00:00:00 +00:00",
+        "quantityCancelled": 0,
+        "quantityOrdered": 130,
+        "sku": "17741072",
+        "styleColorId": "BROWN COMBO LEOPARD PRINT",
+        "styleId": "NR425658MI",
+        "styleSizeId": "NONE",
+        "unitCost": 4.85,
+        "unitMeasure": "EACH",
+        "vendorUpc": ""
+      },
+      {
+        "deliveryDateTime": "06/11/2019 00:00:00 +00:00",
+        "description": "",
+        "destinationAddress": {
+          "city": "",
+          "country": "",
+          "line1": "",
+          "line2": "",
+          "line3": "",
+          "postalCode": "",
+          "state": ""
+        },
+        "destinationId": "873",
+        "destinationName": "VERNON",
+        "epmSku": "2046800537",
+        "lineNo": 3,
+        "promisedDateTime": "10/09/2019 00:00:00 +00:00",
+        "promisedShippedDateTime": "10/09/2019 00:00:00 +00:00",
+        "quantityCancelled": 0,
+        "quantityOrdered": 100,
+        "sku": "17741073",
+        "styleColorId": "GREEN COMBO FOULARD PRINT",
+        "styleId": "NR425658MI",
+        "styleSizeId": "NONE",
+        "unitCost": 4.85,
+        "unitMeasure": "EACH",
+        "vendorUpc": ""
+      }
+    ],
+    "purchaseOrderNumber": "22474294",
+    "salesEventId": "327548",
+    "startShipDate": "10/09/2019 00:00:00 +00:00"
+  }
+]

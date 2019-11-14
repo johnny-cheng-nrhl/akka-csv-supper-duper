@@ -29,7 +29,7 @@ class JsonConsumer(appConfig: AppConfig, inventoryDao: InventoryDao[IO], inbound
   
   private val purchaseOrderParallelism = 1
 
-  val path = Paths.get("src/main/resources/po_backfill_8.json")
+  val path = Paths.get("src/main/resources/po_backfill_9.json")
   println(path)
 
   private val jsonFileSource = FileIO.fromPath(path)
@@ -96,12 +96,14 @@ class JsonConsumer(appConfig: AppConfig, inventoryDao: InventoryDao[IO], inbound
             logger.info(s"Update Inventory Quantity PurchaseOrder PO#: ${po.purchaseOrderNumber} DID: ${po.departmentId} EID: ${eventId}")
             val inventoryChanges: List[InventoryChange] = po.items.map(i => InventoryChange(i.sku, eventId, i.quantityOrdered))
             val updateInventoryProg = for {
-              updatedRows <- inventoryDao.update(inventoryChanges)
+              itemsFromDb <- inventoryDao.findInventoryByEventId(eventId)
+              mergedItems = mergeInventoryItems(itemsFromDb, inventoryChanges)
+              updatedRows <- inventoryDao.update(mergedItems)
             } yield updatedRows match {
               case rows if rows > 0 =>
-                logger.info(s"Rows# = ${rows} updated. Update Inventory Quantity PurchaseOrder PO#: ${po.purchaseOrderNumber} ")
+                logger.info(s"Update Inventory Quantity PurchaseOrder PO#: ${po.purchaseOrderNumber}. Rows# = ${rows} updated.")
               case _ =>
-                logger.info(s"Zero updated. Update Inventory Quantity PurchaseOrder PO#: ${po.purchaseOrderNumber}")
+                logger.info(s"Update Inventory Quantity PurchaseOrder PO#: ${po.purchaseOrderNumber}. Zero updated.")
             }
             updateInventoryProg.unsafeRunSync()
             po
@@ -119,27 +121,52 @@ class JsonConsumer(appConfig: AppConfig, inventoryDao: InventoryDao[IO], inbound
     }
   
   private def updateInboundOrderItemQuantityAction(po: PurchaseOrder): PurchaseOrder = {
-    val inboundOrderItemChanges: List[InboundOrderItemChange] = po.items.map(i => InboundOrderItemChange(i.epmSku, po.purchaseOrderNumber, i.quantityOrdered))
+    val itemChanges: List[InboundOrderItemChange] = po.items.map(i => InboundOrderItemChange(i.epmSku, po.purchaseOrderNumber, i.quantityOrdered))
     val updateInboundOrderItemProg = for {
-      updatedRows <- inboundOrderItemDao.update(inboundOrderItemChanges)
+      itemsFromDb <- inboundOrderItemDao.getInboundOrderItems(po.purchaseOrderNumber)
+      mergedItems = mergeInboundOrderItems(itemsFromDb, itemChanges)
+      updatedRows <- inboundOrderItemDao.update(mergedItems)
     } yield updatedRows match {
       case rows if rows > 0 =>
-        logger.info(s"Rows# = ${rows} updated. Update Inbound Order Item Quantity PurchaseOrder PO#: ${po.purchaseOrderNumber} ")
+        logger.info(s"Update Inbound Order Item Quantity PurchaseOrder PO#: ${po.purchaseOrderNumber}. Rows# = ${rows} updated.")
       case _ =>
-        logger.info(s"Zero updated. Update Inbound Order Item Quantity PurchaseOrder PO#: ${po.purchaseOrderNumber}")
+        logger.info(s"Update Inbound Order Item Quantity PurchaseOrder PO#: ${po.purchaseOrderNumber}. Zero updated.")
     }
     updateInboundOrderItemProg.unsafeRunSync()
     po
   }
   
+  // Only get inbound order items exists in the database
+  private def mergeInboundOrderItems(itemsFromDB: List[InboundOrderItemChange], itemsChange: List[InboundOrderItemChange]): List[InboundOrderItemChange] = {
+    def copyIfExist(old: InboundOrderItemChange, change: Option[InboundOrderItemChange]): InboundOrderItemChange = 
+      change.map(c => old.copy(quantity = c.quantity)).getOrElse(old)
+    
+    val mapChanges: Map[Long, List[InboundOrderItemChange]] = itemsChange.groupBy(_.epmSkuId)
+    for {
+      itemDB <- itemsFromDB
+      changes <- mapChanges.get(itemDB.epmSkuId)
+    } yield copyIfExist(itemDB, changes.headOption)
+  }
+
+  private def mergeInventoryItems(itemsFromDB: List[InventoryChange], itemsChange: List[InventoryChange]): List[InventoryChange] = {
+    def copyIfExist(old: InventoryChange, change: Option[InventoryChange]): InventoryChange =
+      change.map(c => old.copy(available = c.available)).getOrElse(old)
+
+    val mapChanges: Map[Long, List[InventoryChange]] = itemsChange.groupBy(_.sku)
+    for {
+      itemDB <- itemsFromDB
+      changes <- mapChanges.get(itemDB.sku)
+    } yield copyIfExist(itemDB, changes.headOption)
+  }
+
   override def run(): IO[_] = IO {
     jsonFileSource
       .via(selectPurchaseOrderFlow)
       .via(convertByteToStringFlow(purchaseOrderParallelism))
       .via(parseStringToPurchaseOrderFlow(purchaseOrderParallelism))
       .via(dedupedPurchaseOrderFlow(purchaseOrderParallelism))
-//      .via(updateInventoryQuantity(purchaseOrderParallelism))
       .via(updateInboundOrderItemQuantity(purchaseOrderParallelism))
+      .via(updateInventoryQuantity(purchaseOrderParallelism))
       .withAttributes(supervisionStrategy(Supervision.stoppingDecider))
       //    .to(Sink.ignore).run()
       .runWith(Sink.seq)
