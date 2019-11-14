@@ -17,7 +17,7 @@ class InboundOrderItemDaoImpl[F[_]: Monad: Par](catalogWriteConn: DoobieConnecti
   
   override def update(inboundOrderItemChanges: List[InboundOrderItemChange]): F[Int] = {
     logger.info(s"Updating Inbound Order Items rows size: ${inboundOrderItemChanges.size}")
-    DoobieHelpers.batchUpdate(catalogWriteConn.xa, inboundOrderItemChanges, insertInboundOrderSql).map(_.sum)
+    DoobieHelpers.batchUpdate(catalogWriteConn.xa, inboundOrderItemChanges, updateInboundOrderSql).map(_.sum)
   }
 
   override def getInboundOrderItems(inboundOrderId: Long): F[List[InboundOrderItemChange]] = {
@@ -33,12 +33,21 @@ private object InboundOrderItemUpdateSql {
           FROM inbound_orders_items WHERE inbound_order_id = $inboundOrderId
           """.query[InboundOrderItemChange]
   
-  def insertInboundOrderSql: Update[InboundOrderItemChange] = {
-    val query = """INSERT INTO inbound_orders_items (epm_sku_id, inbound_order_id, quantity)
-                  |VALUES (?, ?, ?)
-                  |ON DUPLICATE KEY UPDATE quantity=VALUES(quantity);"""
-      .stripMargin
+  def updateInboundOrderSql: Update[InboundOrderItemChange] = {
+    val query =
+      """
+        |UPDATE inbound_orders_items SET quantity = ? WHERE epm_sku_id = ?
+        |AND inbound_order_id = ?
+        |""".stripMargin
     Update[InboundOrderItemChange](query)
   }
+  
+//  def insertInboundOrderSql: Update[InboundOrderItemChange] = {
+//    val query = """INSERT INTO inbound_orders_items (quantity, epm_sku_id, inbound_order_id)
+//                  |VALUES (?, ?, ?)
+//                  |ON DUPLICATE KEY UPDATE quantity=VALUES(quantity);"""
+//      .stripMargin
+//    Update[InboundOrderItemChange](query)
+//  }
   
 }

@@ -2,6 +2,7 @@ package net.propoint.fun.consumers
 
 import java.nio.file.Paths
 
+import cats.implicits._
 import akka.NotUsed
 import akka.actor.ActorSystem
 import akka.stream.ActorAttributes.supervisionStrategy
@@ -27,9 +28,9 @@ class JsonConsumer(appConfig: AppConfig, inventoryDao: InventoryDao[IO], inbound
   override implicit val system: ActorSystem = ActorSystem("json-consumer")
   override implicit val materializer: ActorMaterializer = ActorMaterializer()
   
-  private val purchaseOrderParallelism = 1
+  private val purchaseOrderParallelism = 2
 
-  val path = Paths.get("src/main/resources/po_backfill_9.json")
+  val path = Paths.get("src/main/resources/po_backfill_8.json")
   println(path)
 
   private val jsonFileSource = FileIO.fromPath(path)
@@ -54,10 +55,6 @@ class JsonConsumer(appConfig: AppConfig, inventoryDao: InventoryDao[IO], inbound
     logger.info(s"Finished deduping PurchaseOrder PO#: ${purchaseOrder.purchaseOrderNumber} items count ${dedupedItems.size}")
     purchaseOrder.copy(items = dedupedItems)
   }
-  
-//  val selectPurchaseOrderFlow: Flow[ByteString, ByteString, NotUsed] =
-//    JsonReader.select("$.purchaseOrder")
-  // JsonFraming.objectScanner(Int.MaxValue)
 
   def selectPurchaseOrderFlow: Flow[ByteString, ByteString, NotUsed] =
     JsonFraming.objectScanner(Int.MaxValue)
@@ -70,16 +67,18 @@ class JsonConsumer(appConfig: AppConfig, inventoryDao: InventoryDao[IO], inbound
 
   def parseStringToPurchaseOrderFlow(parallelism: Int): Flow[String, PurchaseOrder , NotUsed] =
     Flow[String].mapAsync(parallelism) { s =>
-      Future(
+      Future{
+        logger.info("Processing Boomm")
+        throw new Exception("Boom!!")
         PurchaseOrderParser.decodePurchaseOrder(s) match {
-          case Right(po) => 
+          case Right(po) =>
             logger.info(s"Successful parse PurchaseOrder Payload PO#: ${po.purchaseOrderNumber} EventId: ${po.salesEventId} ")
             po
-          case Left(e) => 
+          case Left(e) =>
             logger.error(s"Failed parsing of PurchaseOrder Payload ${e}")
             throw new Exception(e)
         }
-      )
+      }
     }
   
   def dedupedPurchaseOrderFlow(parallelism: Int): Flow[PurchaseOrder, PurchaseOrder, NotUsed] =
@@ -90,87 +89,111 @@ class JsonConsumer(appConfig: AppConfig, inventoryDao: InventoryDao[IO], inbound
 
   def updateInventoryQuantity(parallelism: Int): Flow[PurchaseOrder, PurchaseOrder, NotUsed] =
     Flow[PurchaseOrder].mapAsync(parallelism) { po =>
-      Future(
+      runUpdateInventory(po).unsafeToFuture()
+    }
+  
+  def runUpdateInventory(po: PurchaseOrder):IO[PurchaseOrder] = {
+      val runUpdateInventoryIO = IO {
         po.salesEventId match {
           case Some(eventId) =>
-            logger.info(s"Update Inventory Quantity PurchaseOrder PO#: ${po.purchaseOrderNumber} DID: ${po.departmentId} EID: ${eventId}")
-            val inventoryChanges: List[InventoryChange] = po.items.map(i => InventoryChange(i.sku, eventId, i.quantityOrdered))
+            // Each branch return IO
+            val makeInventoryChanges = IO {
+              logger.info(s"Update Inventory Quantity PurchaseOrder PO#: ${po.purchaseOrderNumber} DID: ${po.departmentId} EID: ${eventId}")
+              val inventoryChanges: List[InventoryChange] = po.items.map(i => InventoryChange(available = i.quantityOrdered, sku = i.sku, eventId = eventId))
+              logger.info(s"InventoryChanges: $inventoryChanges")
+              inventoryChanges
+            }
             val updateInventoryProg = for {
+              inventoryChanges <- makeInventoryChanges
               itemsFromDb <- inventoryDao.findInventoryByEventId(eventId)
               mergedItems = mergeInventoryItems(itemsFromDb, inventoryChanges)
               updatedRows <- inventoryDao.update(mergedItems)
-            } yield updatedRows match {
-              case rows if rows > 0 =>
-                logger.info(s"Update Inventory Quantity PurchaseOrder PO#: ${po.purchaseOrderNumber}. Rows# = ${rows} updated.")
-              case _ =>
-                logger.info(s"Update Inventory Quantity PurchaseOrder PO#: ${po.purchaseOrderNumber}. Zero updated.")
+            } yield {
+              updatedRows match {
+                case rows if rows > 0 =>
+                  logger.info(s"Update Inventory Quantity PurchaseOrder PO#: ${po.purchaseOrderNumber}. Rows# = ${rows} updated.")
+                case _ =>
+                  logger.info(s"Update Inventory Quantity PurchaseOrder PO#: ${po.purchaseOrderNumber}. Zero updated.")
+              }
+              po
             }
-            updateInventoryProg.unsafeRunSync()
-            po
+            updateInventoryProg
           case None =>
-            logger.error(s"Failed Update Inventory Quantity PurchaseOrder PO#: ${po.purchaseOrderNumber} DID: ${po.departmentId}")
-            throw new Exception(s"Failed Update Inventory Quantity PurchaseOrder PO#: ${po.purchaseOrderNumber} DID: ${po.departmentId}: Missing Sales Event Id")
+            IO {
+              logger.error(s"Failed Update Inventory Quantity PurchaseOrder PO#: ${po.purchaseOrderNumber} DID: ${po.departmentId}")
+              throw new Exception(s"Failed Update Inventory Quantity PurchaseOrder PO#: ${po.purchaseOrderNumber} DID: ${po.departmentId}: Missing Sales Event Id")
+            }
         }
-      )
-    }
+      }
+      runUpdateInventoryIO.flatten
+  }
   
   def updateInboundOrderItemQuantity(parallelism: Int): Flow[PurchaseOrder, PurchaseOrder, NotUsed] =
     Flow[PurchaseOrder].mapAsync(parallelism) { po =>
       logger.info(s"Update Inbound Order Item Quantity PurchaseOrder PO#: ${po.purchaseOrderNumber} DID: ${po.departmentId}")
-      Future(updateInboundOrderItemQuantityAction(po))
+      updateInboundOrderItemQuantityAction(po).unsafeToFuture()
     }
   
-  private def updateInboundOrderItemQuantityAction(po: PurchaseOrder): PurchaseOrder = {
-    val itemChanges: List[InboundOrderItemChange] = po.items.map(i => InboundOrderItemChange(i.epmSku, po.purchaseOrderNumber, i.quantityOrdered))
+  private def updateInboundOrderItemQuantityAction(po: PurchaseOrder): IO[PurchaseOrder] = {
     val updateInboundOrderItemProg = for {
+      itemChanges <- IO(po.items.map(i => InboundOrderItemChange(i.quantityOrdered, i.epmSku, po.purchaseOrderNumber)))
       itemsFromDb <- inboundOrderItemDao.getInboundOrderItems(po.purchaseOrderNumber)
       mergedItems = mergeInboundOrderItems(itemsFromDb, itemChanges)
       updatedRows <- inboundOrderItemDao.update(mergedItems)
-    } yield updatedRows match {
-      case rows if rows > 0 =>
-        logger.info(s"Update Inbound Order Item Quantity PurchaseOrder PO#: ${po.purchaseOrderNumber}. Rows# = ${rows} updated.")
-      case _ =>
-        logger.info(s"Update Inbound Order Item Quantity PurchaseOrder PO#: ${po.purchaseOrderNumber}. Zero updated.")
+    } yield {
+      updatedRows match {
+        case rows if rows > 0 =>
+          logger.info(s"Update Inbound Order Item Quantity PurchaseOrder PO#: ${po.purchaseOrderNumber}. Rows# = ${rows} updated.")
+        case _ =>
+          logger.info(s"Update Inbound Order Item Quantity PurchaseOrder PO#: ${po.purchaseOrderNumber}. Zero updated.")
+      }
+      po
     }
-    updateInboundOrderItemProg.unsafeRunSync()
-    po
+    updateInboundOrderItemProg
   }
   
   // Only get inbound order items exists in the database
   private def mergeInboundOrderItems(itemsFromDB: List[InboundOrderItemChange], itemsChange: List[InboundOrderItemChange]): List[InboundOrderItemChange] = {
-    def copyIfExist(old: InboundOrderItemChange, change: Option[InboundOrderItemChange]): InboundOrderItemChange = 
-      change.map(c => old.copy(quantity = c.quantity)).getOrElse(old)
-    
-    val mapChanges: Map[Long, List[InboundOrderItemChange]] = itemsChange.groupBy(_.epmSkuId)
-    for {
-      itemDB <- itemsFromDB
-      changes <- mapChanges.get(itemDB.epmSkuId)
-    } yield copyIfExist(itemDB, changes.headOption)
+    val newChanges = for {
+      itemFromDB <- itemsFromDB
+    } yield itemsChange.filter(_.similar(itemFromDB))
+    newChanges.flatten
   }
 
   private def mergeInventoryItems(itemsFromDB: List[InventoryChange], itemsChange: List[InventoryChange]): List[InventoryChange] = {
-    def copyIfExist(old: InventoryChange, change: Option[InventoryChange]): InventoryChange =
-      change.map(c => old.copy(available = c.available)).getOrElse(old)
-
-    val mapChanges: Map[Long, List[InventoryChange]] = itemsChange.groupBy(_.sku)
-    for {
-      itemDB <- itemsFromDB
-      changes <- mapChanges.get(itemDB.sku)
-    } yield copyIfExist(itemDB, changes.headOption)
+    val newChanges = for {
+      itemFromDB <- itemsFromDB
+    } yield itemsChange.filter(_.similar(itemFromDB))
+    logger.info(s"itemsFromDB: $itemsFromDB AND itemsChange: $itemsChange")
+    newChanges.flatten
   }
 
-  override def run(): IO[_] = IO {
-    jsonFileSource
-      .via(selectPurchaseOrderFlow)
-      .via(convertByteToStringFlow(purchaseOrderParallelism))
-      .via(parseStringToPurchaseOrderFlow(purchaseOrderParallelism))
-      .via(dedupedPurchaseOrderFlow(purchaseOrderParallelism))
-      .via(updateInboundOrderItemQuantity(purchaseOrderParallelism))
-      .via(updateInventoryQuantity(purchaseOrderParallelism))
-      .withAttributes(supervisionStrategy(Supervision.stoppingDecider))
-      //    .to(Sink.ignore).run()
-      .runWith(Sink.seq)
+  override def run(): IO[_] = {
+    val ioFuture = IO.fromFuture(IO {
+      jsonFileSource
+        .via(selectPurchaseOrderFlow)
+        .via(convertByteToStringFlow(purchaseOrderParallelism))
+        .via(parseStringToPurchaseOrderFlow(purchaseOrderParallelism))
+        .via(dedupedPurchaseOrderFlow(purchaseOrderParallelism))
+        .via(updateInventoryQuantity(purchaseOrderParallelism))
+        .via(updateInboundOrderItemQuantity(purchaseOrderParallelism))
+        .log("Stepppp Boom")
+        .withAttributes(supervisionStrategy(Supervision.stoppingDecider))
+        .to(Sink.ignore).run()
+    }).attempt.map {
+      res => res match {
+        case Right(value) =>
+          logger.info(s"Looggging update: ${value}")
+          value
+        case Left(e) =>
+          logger.error("ERRORRRR: ", e)
+          throw e
+      }
+    }
+    ioFuture
   }
+  
+  
 }
 
 object JsonConsumer{

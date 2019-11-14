@@ -22,28 +22,23 @@ object Main extends App with LazyLogging {
 
   // implicit actor materializer
   implicit val materializer = ActorMaterializer()
-  //  implicit val cs = IO.contextShift(ExecutionContext.global)
-
+  
   // only load config once, and pass around what you need
   val appConfig = AppConfig.loadFromEnvironment()
   
-  def runConsumersProgram(appConfig: AppConfig, inventoryDao: InventoryDao[IO], inboundOrderItemDao: InboundOrderItemDao[IO]): IO[_] = {
-    JsonConsumer(appConfig, inventoryDao, inboundOrderItemDao).run()
-  }
-
   val program: IO[Unit] = for {
     catalogDBWrite <- IO(MysqlConfig.writeConnection[IO](appConfig.catalogDBWriteConfig))
     ecommDBWrite <- IO(MysqlConfig.writeConnection[IO](appConfig.ecommDBWriteConfig))
     
     inventoryDao = new InventoryDaoImpl(ecommDBWrite)
     inboundOrderItemDao = new InboundOrderItemDaoImpl(catalogDBWrite)
-    _ <- JsonConsumer(appConfig, inventoryDao, inboundOrderItemDao).run()
+    result <- JsonConsumer(appConfig, inventoryDao, inboundOrderItemDao).run().attempt
   
-  } yield {}
+  } yield {
+    result.leftMap(e => logger.error("Stream failed:", e))
+  }
 
   program.unsafeRunSync()
   
-//  private val reply = Await.result(results, 10 seconds)
-//  println(s"Received $reply")
   Await.ready(system.terminate(), 10 seconds)
 }

@@ -10,14 +10,27 @@ import com.typesafe.scalalogging.LazyLogging
 import net.propoint.fun.models.InventoryChange
 import net.propoint.fun.platform.DoobieHelpers
 
-class InventoryDaoImpl[F[_]: Monad: Par](ecommWriteConn: DoobieConnections.Write[F]) 
+class InventoryDaoImpl[F[_]: Par](ecommWriteConn: DoobieConnections.Write[F])(implicit me: MonadError[F, Throwable])
   extends InventoryDao[F] with LazyLogging {
   
   import InventoryUpdateSql._
   
   override def update(inventoryChanges: List[InventoryChange]): F[Int] = {
-    logger.info(s"Updating Inventory rows size: ${inventoryChanges.size}")
-    DoobieHelpers.batchUpdate(ecommWriteConn.xa, inventoryChanges, insertInventorySql).map(_.sum)
+    logger.info(s"Updating Inventory rows size: ${inventoryChanges}")
+    val result = (DoobieHelpers.batchUpdate(ecommWriteConn.xa, inventoryChanges, updateAvaiableSql).map(_.sum).map {
+      i => logger.info(s"After update inventory rows: ${i}")
+      i
+    }).attempt.map {
+      res => res match {
+        case Right(value) =>
+          logger.info(s"Dao Logiing update: ${value}")
+          value
+        case Left(e) =>
+          logger.error("ERRORRRR: ", e)
+          throw e
+      }
+    }
+    result
   }
 
   override def findInventoryByEventId(eventId: Long): F[List[InventoryChange]] = {
@@ -29,17 +42,18 @@ class InventoryDaoImpl[F[_]: Monad: Par](ecommWriteConn: DoobieConnections.Write
 private object InventoryUpdateSql {
   
   def getInventoryByEventId(eventId: Long): Query0[InventoryChange] =
-    sql"""SELECT sku AS sku, event_id AS eventId, available AS available
+    sql"""SELECT available AS available, sku AS sku, event_id AS eventId
           FROM inventory WHERE event_id = $eventId""".query[InventoryChange]
   
-  def updateAvaiable(change: InventoryChange): Update0 = {
-    fr"""UPDATE FROM inventory i 
-          SET i.available = ${change.available} WHERE i.event_id = ${change.eventId}
-          AND i.sku = ${change.sku}""".stripMargin.update
+  def updateAvaiableSql: Update[InventoryChange]= {
+    val query = """UPDATE inventory i 
+          SET i.available = ? WHERE i.sku = ?
+          AND i.event_id = ?""".stripMargin
+    Update[InventoryChange](query)
   }
 
   def insertInventorySql: Update[InventoryChange] = {
-    val query = """INSERT INTO inventory (sku, event_id, available)
+    val query = """INSERT INTO inventory (available, sku, event_id)
                   |VALUES (?, ?, ?)
                   |ON DUPLICATE KEY UPDATE available=VALUES(available);"""
       .stripMargin
